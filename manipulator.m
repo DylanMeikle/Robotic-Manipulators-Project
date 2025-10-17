@@ -64,10 +64,14 @@ classdef manipulator
             if ~isempty(q)                
                 vars = symvar(Trans);
                 q_index = 1;
+                l_index = 1;
                 for index = 1:length(vars)
                     if ~startsWith(string(vars(index)), "l")
                         Trans = subs(Trans,vars(index),q(q_index));
                         q_index = q_index + 1;
+                    else
+                        Trans = subs(Trans,vars(index),l(l_index));
+                        l_index = l_index + 1;
                     end
                 end
             end
