@@ -1,25 +1,29 @@
 classdef manipulator < handle
 
     properties
-        DH
-        A_Mats
-        Trans
-        numJoints
-        config
+        DH          %DH parameters that the user inputs
+        A_Mats      %3D array to hold all the A matrices
+        Trans       %General transformation matrix for manipulator
+        numJoints   %Number of joints in the system
+        config      %Type of joints and their order from base to EE
+        sing        %singularities
+        links       %link lengths
     end
 
     methods
         
-        %COnstructor
-        function self = manipulator(DH)
+        %Constructor
+        function self = manipulator(DH,l)
             
             self.DH = DH;
             self.numJoints = size(self.DH,1);
+            self.links = l;
+            self.Trans = self.fkine();
         
         end
 
         %Prints all the current manipulator parameters
-        function currentProperties()
+        function currentProperties(self)
 
             self.DH
             self.A_Mats
@@ -33,54 +37,64 @@ classdef manipulator < handle
         %manipulator and return the general tranformation matrix or the
         %transformation matrix for a given set of joint positions and link
         %lengths
-        function Trans = fkine(self,q,l)
+        function Trans = fkine(self,q)
             %q and l are optional arguments
             arguments
                 self
                 q = []
-                l = []
             end
 
-            numJoints = self.numJoints;
-            %Have to setup array with syms otherwise MATLAB will complain about using
-            %numeric vs variables
-            A_Mats = sym(zeros(4,4,numJoints));
-            
 
+           
+            
+            if isempty(self.Trans) 
+
+          
+                numJoints = self.numJoints;
+                %Have to setup array with syms otherwise MATLAB will complain about using
+                %numeric vs variables
+                A_Mats = sym(zeros(4,4,numJoints));
                 
-            for index = 1:numJoints
-                %User must define the DH table for a given robot
-                a = self.DH(index,1);
-                d = self.DH(index,2);
-                alpha = self.DH(index,3);
-                theta = self.DH(index,4);
-
-                % Build the A_i matrix
-                A_Mats(:,:,index) = createMatrix(a,d,alpha,theta);
+    
+                    
+                for index = 1:numJoints
+                    %User must define the DH table for a given robot
+                    a = self.DH(index,1);
+                    d = self.DH(index,2);
+                    alpha = self.DH(index,3);
+                    theta = self.DH(index,4);
+    
+                    % Build the A_i matrix
+                    A_Mats(:,:,index) = createMatrix(a,d,alpha,theta);
+                end
+                
+                
+                % pi/180 substituted with 1 and saving the A matrices as
+                % properties of the manipulator
+                self.A_Mats = subs(A_Mats(:,:,:),pi/180,1);
+                
+            
+                % Multiply all transformation matrices to get the end effector
+                % frame with respect to the base frame
+                Trans = eye(4); 
+                for index = 1:numJoints
+                    Trans = Trans * A_Mats(:,:,index);
+                end
+                
+                sympref('AbbreviateOutput', false);
+                %Simplifies the transformation matrix
+                Trans = simplify(Trans,"Steps",400);
+                %This removes the pi/180 that appears when you just use the simplify
+                %function to display
+                Trans = subs(Trans,pi/180,1);
+                %Saving the general transformation matrix as a property of the
+                %manipulator 
+                self.Trans = Trans;
+                
+                
+            else %If Trans has already been calculated
+                Trans = self.Trans;
             end
-            
-            
-            % pi/180 substituted with 1 and saving the A matrices as
-            % properties of the manipulator
-            self.A_Mats = subs(A_Mats(:,:,:),pi/180,1);
-            
-        
-            % Multiply all transformation matrices to get the end effector
-            % frame with respect to the base frame
-            Trans = eye(4); 
-            for index = 1:numJoints
-                Trans = Trans * A_Mats(:,:,index);
-            end
-            
-            sympref('AbbreviateOutput', false);
-            %Simplifies the transformation matrix
-            Trans = simplify(Trans,"Steps",400);
-            %This removes the pi/180 that appears when you just use the simplify
-            %function to display
-            Trans = subs(Trans,pi/180,1);
-            %Saving the general transformation matrix as a property of the
-            %manipulator 
-            self.Trans = Trans;
             
             %If the variable for q isn't empty, then sub them into the
             %transformation matrix
@@ -96,15 +110,28 @@ classdef manipulator < handle
                         q_index = q_index + 1;
                     %If the variable name does start with l
                     else
-                        Trans = subs(Trans,vars(index),l(l_index));
+                        Trans = subs(Trans,vars(index),self.links(l_index));
                         l_index = l_index + 1;
                     end
                 end
             end
-        end
 
-        function q = ikine(self)
-            %q = zeroes(self.)
+        end
+        %Given a position q, return necessary joint values to achieve
+        %that position
+        function [d1,theta2,theta3] = ikine(self,q)
+            x = q(1,1);
+            y = q(1,2);
+            z = q(1,3);
+            l1 = self.links(1);
+            l2 = self.links(2);
+            l3 = self.links(3);
+      
+            d1 = z;
+            D = (x^2 + (y-l1)^2 - l2^2 - l3^2)/(2*l2*l3);
+            theta3 = atan2(D,sqrt(1-D^2));
+            theta2 = atan2(x,y-l1) - atan2(l2+l3*cos(theta3),l3*sin(theta3));
+            
 
         end
 
@@ -117,7 +144,7 @@ classdef manipulator < handle
             %transformation matrix
             vars = symvar(self.Trans);
             var_index = 1;
-            self.config = strings(1,length(vars)); %preallocate as string array
+            self.config = strings(1,numJoints); %preallocate as string array
 
             %Loop through all the unknowns in the transformation matrix
             for index = 1:length(vars)
