@@ -128,10 +128,14 @@ classdef manipulator < handle
             l3 = self.links(3);
       
             d1 = z;
-            D = (x^2 + (y-l1)^2 - l2^2 - l3^2)/(2*l2*l3);
-            theta3 = atan2(D,-sqrt(1-D^2));
-            theta2 = atan2(x,y-l1) - atan2(l2+l3*cos(theta3),l3*sin(theta3));
-            
+            D = (y^2 + (x-l1)^2 - l2^2 - l3^2)/(2*l2*l3);
+            theta3_minus = atan2(D,-sqrt(1-D^2));
+            theta3_plus = atan2(D,sqrt(1-D^2));
+            theta3 = [theta3_plus theta3_minus];
+           
+            theta2_minus = atan2(y,x-l1) - atan2(l2+l3*cos(theta3_minus),l3*sin(theta3_minus));
+            theta2_plus = atan2(y,x-l1) - atan2(l2+l3*cos(theta3_plus),l3*sin(theta3_plus));
+            theta2 = [theta2_plus theta2_minus];
 
         end
 
