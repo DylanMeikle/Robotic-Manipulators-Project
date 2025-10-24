@@ -1,3 +1,4 @@
+
 classdef manipulator < handle
 
     properties
@@ -8,6 +9,7 @@ classdef manipulator < handle
         config      %Type of joints and their order from base to EE
         sing        %singularities
         links       %link lengths
+        
     end
 
     methods
@@ -44,7 +46,7 @@ classdef manipulator < handle
                 q = []
             end
 
-
+            syms l1 l2 l3
            
             
             if isempty(self.Trans) 
@@ -69,9 +71,8 @@ classdef manipulator < handle
                 end
                 
                 
-                % pi/180 substituted with 1 and saving the A matrices as
-                % properties of the manipulator
-                self.A_Mats = subs(A_Mats(:,:,:),pi/180,1);
+             
+                self.A_Mats = A_Mats(:,:,:);
                 
             
                 % Multiply all transformation matrices to get the end effector
@@ -86,7 +87,8 @@ classdef manipulator < handle
                 Trans = simplify(Trans,"Steps",400);
                 %This removes the pi/180 that appears when you just use the simplify
                 %function to display
-                Trans = subs(Trans,pi/180,1);
+                %Trans = subs(Trans,pi/180,1);
+                Trans = subs(Trans, {l1, l2, l3}, {self.links(1,1), self.links(1,2), self.links(1,3)});
                 %Saving the general transformation matrix as a property of the
                 %manipulator 
                 self.Trans = Trans;
@@ -212,8 +214,8 @@ end
 
 %General form of the homgeneous transformation matrix
 function A = createMatrix(a,d,alpha,theta)
-    A = [cosd(theta) -sind(theta)*cosd(alpha)  sind(theta)*sind(alpha)  a*cosd(theta);
-         sind(theta)  cosd(theta)*cosd(alpha) -cosd(theta)*sind(alpha)  a*sind(theta);
-         0           sind(alpha)             cosd(alpha)             d;
+    A = [cos(theta) -sin(theta)*cos(alpha)  sin(theta)*sin(alpha)  a*cos(theta);
+         sin(theta)  cos(theta)*cos(alpha) -cos(theta)*sin(alpha)  a*sin(theta);
+         0           sin(alpha)             cos(alpha)             d;
          0           0                      0                      1];
 end
