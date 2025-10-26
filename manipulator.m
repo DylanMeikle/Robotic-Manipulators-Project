@@ -146,10 +146,17 @@ classdef manipulator < handle
         end
 
 
-        function J = Jacobian(self)
+        function J = Jacobian(self,q)
+            arguments
+                self
+                q = []
+            end
+            syms l1 l2 l3 d1 theta2 theta3
+
             %This assumes that the user has already run fkine
             numJoints = self.numJoints;
             A_Mats = self.A_Mats;
+            links = self.links;
             
             %This identifies the configuration based on the unknowns in the
             %transformation matrix
@@ -207,8 +214,14 @@ classdef manipulator < handle
                 end
 
             end
-        
+            
             J = simplify(J);
+            J = subs(J, {l1 l2 l3}, {links(1) links(2) links(3)});
+            if ~isempty(q)
+
+                J = subs(J, {d1, theta2, theta3}, {q(1) q(2) q(3)});
+
+            end
             %Singularity = simplify(det(J));
             %subs(Singularity,pi/180,1);
         
