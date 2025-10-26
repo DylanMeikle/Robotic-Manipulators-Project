@@ -134,7 +134,7 @@ classdef manipulator < handle
             D = (y^2 + (x-l1)^2 - l2^2 - l3^2)/(2*l2*l3);
             theta3_minus = atan2(-sqrt(1-D^2),D); 
             theta3_plus = atan2(sqrt(1-D^2),D);
-            
+
             theta3 = [theta3_plus theta3_minus];
             
             %Changed the plus theta2 to addition and it makes more sense now
@@ -143,7 +143,7 @@ classdef manipulator < handle
             theta2_plus = atan2(y,(x-l1)) - atan2(l3*sin(theta3_plus),l2+l3*cos(theta3_plus)); 
            
             theta2 = [theta2_plus theta2_minus];
-                    end
+        end
 
 
         function J = Jacobian(self)
