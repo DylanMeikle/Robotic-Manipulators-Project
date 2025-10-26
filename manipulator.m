@@ -121,25 +121,30 @@ classdef manipulator < handle
         end
         %Given a position q, return necessary joint values to achieve
         %that position
-        function [d1,theta2,theta3] = ikine(self,q)
-            x = q(1,1);
-            y = q(1,2);
-            z = q(1,3);
+        function [d1, theta2, theta3] = ikine(self, q)
+            % q = [x y z] (desired EE position in base frame)
+            x = q(1); y = q(2); z = q(3);
             l1 = self.links(1);
             l2 = self.links(2);
             l3 = self.links(3);
-      
-            d1 = z;
+        
+            d1 = z;               % prismatic first joint
+        
+            
             D = (y^2 + (x-l1)^2 - l2^2 - l3^2)/(2*l2*l3);
-            theta3_minus = atan2(D,-sqrt(1-D^2));
-            theta3_plus = atan2(D,sqrt(1-D^2));
+            theta3_minus = atan2(-sqrt(1-D^2),D); 
+            theta3_plus = atan2(sqrt(1-D^2),D);
+            
             theta3 = [theta3_plus theta3_minus];
+            
+            %Changed the plus theta2 to addition and it makes more sense now
+            theta2_minus = atan2(y,x-l1) - atan2(l3*sin(theta3_minus),l2+l3*cos(theta3_minus));
+            %theta2_plus_test = atan((l2+l3*cos(theta3_plus))/(l3*sin(theta3_plus))) - atan((x-l1)/y)
+            theta2_plus = atan2(y,(x-l1)) - atan2(l3*sin(theta3_plus),l2+l3*cos(theta3_plus)); 
            
-            theta2_minus = atan2(y,x-l1) - atan2(l2+l3*cos(theta3_minus),l3*sin(theta3_minus));
-            theta2_plus = atan2(y,x-l1) - atan2(l2+l3*cos(theta3_plus),l3*sin(theta3_plus));
             theta2 = [theta2_plus theta2_minus];
+                    end
 
-        end
 
         function J = Jacobian(self)
             %This assumes that the user has already run fkine
@@ -172,7 +177,7 @@ classdef manipulator < handle
             % Base frame
             z(:,1) = [0;0;1];
             O(:,1) = [0;0;0];
-            self.A_Mats(:,:,1)
+            self.A_Mats(:,:,1);
             % Compute cumulative transforms
             for i = 1:numJoints
                 T = T * A_Mats(:,:,i);
@@ -197,7 +202,7 @@ classdef manipulator < handle
 
                 else
                 
-                    disp(["Issue with configuration:", self.config])
+                    disp(["Issue with configuration:", self.config]);
                     
                 end
 
