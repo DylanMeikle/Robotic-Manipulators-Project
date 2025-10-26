@@ -40,12 +40,12 @@ classdef manipulator < handle
         %transformation matrix for a given set of joint positions and link
         %lengths
         function Trans = fkine(self,q)
-            %q and l are optional arguments
+            %q is an optional arguments
             arguments
                 self
                 q = []
             end
-
+            %Needs to be here so we can use subs function later
             syms l1 l2 l3
            
             
@@ -147,10 +147,12 @@ classdef manipulator < handle
 
 
         function J = Jacobian(self,q)
+            %q is an optional argument
             arguments
                 self
                 q = []
             end
+            %Needs to be here so we can use subs function later
             syms l1 l2 l3 d1 theta2 theta3
 
             %This assumes that the user has already run fkine
@@ -216,16 +218,20 @@ classdef manipulator < handle
             end
             
             J = simplify(J);
+            %Substituting values for links into the jacobian
             J = subs(J, {l1 l2 l3}, {links(1) links(2) links(3)});
+            %If values for q were passed, sub them into the jacobian
             if ~isempty(q)
 
                 J = subs(J, {d1, theta2, theta3}, {q(1) q(2) q(3)});
 
             end
-            %Singularity = simplify(det(J));
-            %subs(Singularity,pi/180,1);
-        
-            %fprintf("Determinant of J: %s\n", Singularity);
+            %Don't need these atm
+            %{
+            Singularity = simplify(det(J));
+            subs(Singularity,pi/180,1);
+            fprintf("Determinant of J: %s\n", Singularity);
+            %}
         end
     end
 end
