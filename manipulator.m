@@ -39,7 +39,7 @@ classdef manipulator < handle
         %manipulator and return the general tranformation matrix or the
         %transformation matrix for a given set of joint positions and link
         %lengths
-        function Trans = fkine(self,q)
+        function [Trans, A_Mats] = fkine(self,q)
             %q is an optional arguments
             arguments
                 self
@@ -59,15 +59,15 @@ classdef manipulator < handle
                 
     
                     
-                for index = 1:numJoints
+                for joint = 1:numJoints
                     %User must define the DH table for a given robot
-                    a = self.DH(index,1);
-                    d = self.DH(index,2);
-                    alpha = self.DH(index,3);
-                    theta = self.DH(index,4);
+                    a = self.DH(joint,1);
+                    d = self.DH(joint,2);
+                    alpha = self.DH(joint,3);
+                    theta = self.DH(joint,4);
     
                     % Build the A_i matrix
-                    A_Mats(:,:,index) = createMatrix(a,d,alpha,theta);
+                    A_Mats(:,:,joint) = createMatrix(a,d,alpha,theta);
                 end
                 
                 
