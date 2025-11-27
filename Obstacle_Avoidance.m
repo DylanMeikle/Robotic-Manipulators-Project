@@ -117,12 +117,12 @@ function [origin_start, origin_next] = getOrigin(O,pos,joint,A_Mats)
 end
 
 %Function that returns attractive force on each joint
-function F_att = Attractive_Forces(joint, origin_start, origin_final, d, zeta)
+function F_att = Attractive_Forces(joint, origin_start, origin_next, d, zeta)
 
-    if norm(origin_start - origin_final) <= d
-        F_att(:,:,joint) = -zeta(joint)*(origin_start - origin_final); %Parabolic
+    if norm(origin_start - origin_next) <= d
+        F_att(:,:,joint) = -zeta(joint)*(origin_start - origin_next); %Parabolic
     else
-        F_att(:,:,joint) = -d*zeta(joint)*((origin_start - origin_final)/norm(origin_start - origin_final)); %Conic
+        F_att(:,:,joint) = -d*zeta(joint)*((origin_start - origin_next)/norm(origin_start - origin_next)); %Conic
     end
         
 end
@@ -145,14 +145,10 @@ function tau = torque(F_att, F_rep, q,joint)
     J = bot1.Jacobian(q);
     
     %Figure out how to set jacobians in this equation
-    tau_att(joint) = transpose(J())*F_att(:,:,joint);
-    tau_rep(joint) = transpose(J())*F_rep(:,:,joint);
+    tau_att(:,:,joint) = transpose(J())*F_att(:,:,joint);
+    tau_rep(:,:,joint) = transpose(J())*F_rep(:,:,joint);
     
-
-
-    %Calculate forces on joint based on attractive and repulsive forces
-    
-    tau(1,:, joint) = F_att_tot + F_rep_tot;
+    tau(:,:, joint) = tau_att(:,:,joint) + tau_rep(:,:,joint);
 
 end
 
