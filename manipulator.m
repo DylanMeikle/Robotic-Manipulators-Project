@@ -39,11 +39,12 @@ classdef manipulator < handle
         %manipulator and return the general tranformation matrix or the
         %transformation matrix for a given set of joint positions and link
         %lengths
-        function [Trans, A_Mats] = fkine(self,q)
+        function [Trans, A_Mats] = fkine(self,q,l)
             %q is an optional arguments
             arguments
                 self
                 q = []
+                l = []
             end
             %Needs to be here so we can use subs function later
             syms l1 l2 l3
@@ -95,7 +96,12 @@ classdef manipulator < handle
                 
                 
             else %If Trans has already been calculated
-                Trans = self.Trans;
+    
+
+                Trans = subs(self.Trans, {l1, l2, l3}, {self.links(1,1), self.links(1,2), self.links(1,3)});
+                self.Trans = Trans;
+                A_Mats = subs(self.A_Mats, {l1, l2, l3}, {self.links(1,1), self.links(1,2), self.links(1,3)});
+                self.A_Mats = A_Mats;
             end
             
             %If the variable for q isn't empty, then sub them into the
@@ -117,6 +123,8 @@ classdef manipulator < handle
                     end
                 end
             end
+
+            
 
         end
         %Given a position q, return necessary joint values to achieve
