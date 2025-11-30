@@ -1,255 +1,302 @@
-%% Obstacle Avoidance code
+%% Obstacle Avoidance code - FIXED VERSION
 
 %% Setup
 clc; clear;
 syms l1 l2 l3 d1 d2 d3 theta1 theta2 theta3 real
 
-
 l = [1245 685 685]; %Link Lengths set 1
-DH =    [l1 d1 0 0;
-        l2 0 0 theta2;
-        l3 0 0 theta3];
+DH = [l1 d1 0 0;
+      l2 0 0 theta2;
+      l3 0 0 theta3];
 bot = manipulator(DH,l);
 
 numJoints = 3;
 
-%Potential Field Parameters 
-
-F_att = zeros(numJoints,numJoints);           %Force from attractive field on a given joint
-F_rep = zeros(numJoints,numJoints);           %Force from repulsive field on a given joint
-q = [];                         %Current Position in 3D space
-
 %Tunable Parameters
-alpha = [10, pi/32, pi/32];              %Defines step size
-epsilon = 10;
-%epsilon = [1, pi/16, pi/16];            %Region of Convergence ->
-zeta = [100 5 5];                         %Constant to be tuned for strengh of attractive field on a given joint 
-nu = [1 1 1];                           %Constant to be tuned for strength of repulsive field on a given joint
-d = 15;                                  %Distance that defines transition from conic to parabolic well
-rho = 15;                                %Region of influence -> Distance that defines if repulsive forces act on a joint
+alpha = [2, 0.1, 0.1];              % Step size for each joint
+epsilon = 10;                       % Convergence tolerance (mm)
+zeta = [200 50 50];                 % Attractive field strength (increased for EE)
+nu = [10 10 10];                    % Repulsive field strength (reduced)
+d = 100;                            % Transition distance for attractive field
+rho = 50;                          % Region of influence for repulsive field
 
-tau = [];              %Torques acting on joints
-step = [];             %Step size for each loop
-
-obs =   [1225 770 550        %Centrifuge
-        1225 770 550];              %Flask
+% Obstacle positions
+obs = [1225 770 550;                % Centrifuge
+       1225 770 550];               % Flask (will be updated)
 
 path = 1;
 
-%Changes which flask is treated as an obstacle 
+% Set start and goal positions based on path
 if path == 1
-    %In path 1, flask 2 is treated as obstacle
-    obs(2,:) = [1225 970 500];      %Flask 2 - Obstacle
-    pos_start = [1225 770 550];      %Flask 1 - Starting Position
-    pos_goal = [1225 750 1640];     %Goal
+    obs(2,:) = [1225 970 500];      % Flask 2 - Obstacle
+    pos_start = [1225 770 550];     % Flask 1 - Starting Position
+    pos_goal = [1225 750 1640];     % Goal
 else
-    %In path 2, flask 1 is treated as obstacle
-    obs(2,:) = [1225 770 550];      %Flask 1 - Obstacle
-    pos_start = [1225 970 500];      %Flask 2 - Starting Position
-    pos_goal = [1225 1000 2000];    %Goal
+    obs(2,:) = [1225 770 550];      % Flask 1 - Obstacle
+    pos_start = [1225 970 500];     % Flask 2 - Starting Position
+    pos_goal = [1225 1000 2000];    % Goal
 end
 
+% Calculate starting and goal joint angles
 [d1_start, theta2_start, theta3_start] = bot.ikine(pos_start);
 [d1_goal, theta2_goal, theta3_goal] = bot.ikine(pos_goal);
 
-% Choose elbow-up or elbow-down solution (column 1 or 2)
-% Using first solution (index 1) for both theta2 and theta3
-q_current = [d1_start, theta2_start(1), theta3_start(1)];  % [d1, theta2, theta3]
+% Choose elbow-up or elbow-down solution
+q_current = [d1_start, theta2_start(1), theta3_start(1)];
 q_target = [d1_goal, theta2_goal(1), theta3_goal(1)];
 
-[T, A_Mats] = bot.fkine();
-T = eval(T);
-%J = bot.Jacobian();
-
-
-
-
-%Preallocate space for 3, 3x3 matrices for the velocity jacobian for every
-%origin
-%3 rows (for velocity jacobian) x 3 columns (numJoints) x 3 matrices (for each origin = numjoint)
-%J = zeros(3,numJoints,numJoints);
+% Initialize Jacobian to set up bot properties
 bot.Jacobian();
-[J,O,z] = Jv(bot);
+
+% Get origins and z-axes
+[J_all, O, z] = Jv(bot);
+
+% Storage
 path_points = [];
+iteration = 0;
+max_iterations = 5000;
 
+fprintf('Starting obstacle avoidance...\n');
+fprintf('Initial config: [%.2f, %.4f, %.4f]\n', q_current(1), q_current(2), q_current(3));
+fprintf('Target config: [%.2f, %.4f, %.4f]\n', q_target(1), q_target(2), q_target(3));
+fprintf('Initial distance: %.2f\n\n', norm(q_current - q_target));
 
-%% Execution
+%% Execution Loop
 
+pos_error = inf;  % Initialize task space error
 
-while norm(q_current - q_target) > epsilon
-    norm(q_current - q_target);
-    abs(q_current - q_target)
-
-   %Apply force field to each joint
-   
-   for joint = 1:numJoints
-     
-        % Get the position of every origin for every time step
-        [origin_start, origin_next] = getOrigin(O(:,joint+1),q_current,q_target)
-        
+while pos_error > epsilon && iteration < max_iterations
+    iteration = iteration + 1;
     
+    % Get current EE position
+    [Trans, ~] = bot.fkine(q_current);
+    pos_current = Trans(1:3,4)';
+    pos_current = double(pos_current);
+    path_points = [path_points; pos_current];
+    
+    % Calculate task space error
+    pos_error = norm(pos_current - pos_goal);
+    
+    % Initialize force arrays
+    F_att = zeros(3, numJoints);
+    F_rep = zeros(3, numJoints);
+    tau = zeros(1, numJoints);
+    
+    % Apply force field to each joint
+    for joint = 1:numJoints
+        % Get current and goal origins for this joint
+        [origin_current, origin_goal] = getOrigin(O(:,joint+1), q_current, q_target);
+        
         % Attractive Forces
+        F_att(:,joint) = Attractive_Forces(origin_current, origin_goal, d, zeta(joint));
         
-        F_att(:,joint) = Attractive_Forces(origin_start, origin_next, d, zeta(joint))
-       
         % Repulsive Forces
-        F_rep(:,joint) = Repulsive_Force(pos_start,obs,rho,nu(joint),origin_start)
+        F_rep(:,joint) = Repulsive_Force(origin_current, obs, rho, nu(joint));
         
-        %Calculate resultant torque/force on each joints
-        
-        tau(joint) = torques(F_att(:,joint), F_rep(:,joint), J(:,joint))
-        
-        
-
-   end
-
-
-    step = tau/norm(tau);
-    q_current = q_current + step'.*alpha; 
-   
-   [Trans, ~] = bot.fkine(q_current);
-   pos_start = Trans(1:3,4)';
-   pos_start = eval(pos_start);
-   path_points = [path_points; pos_start];   % record EE position each step
-
+        % Calculate torques using Jacobian for this joint
+        J_joint = getJacobian(J_all, q_current, joint);
+        tau_vec = torques(F_att(:,joint), F_rep(:,joint), J_joint);
+        tau(joint) = tau_vec(joint);  % Extract only this joint's torque component
+    end
+    
+    % Normalize and scale step
+    tau_norm = norm(tau);
+    if tau_norm > 0
+        step = (tau / tau_norm) .* alpha;
+    else
+        step = zeros(1, numJoints);
+    end
+    
+    % Update joint positions
+    q_current = q_current + step;
+    
+    % Print progress
+    if mod(iteration, 100) == 0
+        fprintf('Iteration %d: Position error = %.2f mm, Joint error = %.4f\n', ...
+                iteration, pos_error, norm(q_current - q_target));
+    end
 end
-path_points;
+
+fprintf('\nFinished after %d iterations\n', iteration);
+fprintf('Final config: [%.2f, %.4f, %.4f]\n', q_current(1), q_current(2), q_current(3));
+fprintf('Final position error: %.2f mm\n', pos_error);
+fprintf('Current position: [%.2f, %.2f, %.2f]\n', pos_current(1), pos_current(2), pos_current(3));
+fprintf('Goal position: [%.2f, %.2f, %.2f]\n', pos_goal(1), pos_goal(2), pos_goal(3));
+
+% Add final position
+[Trans, ~] = bot.fkine(q_current);
+pos_final = double(Trans(1:3,4)');
+path_points = [path_points; pos_final];
+
 plotPath(path_points, pos_start, pos_goal, obs);
-
-
-
-
 
 %% Functions
 
-%Function to get the current and next origin for a joint
-function [origin_start, origin_next] = getOrigin(O,q_current, q_target)
-   syms d1 theta2 theta3
+function [origin_current, origin_goal] = getOrigin(O_sym, q_current, q_target)
+    syms d1 theta2 theta3
     
-    %If there's nothing to substitue this try/catch will solve that. 
+    % Substitute current joint values
     try
-        
-        origin_start = eval(subs(O,[d1, theta2, theta3],q_current));
-        origin_next = eval(subs(O,[d1, theta2, theta3],q_target));
+        origin_current = double(subs(O_sym, [d1, theta2, theta3], q_current));
     catch
-        origin_start = O;
-        origin_next = O;
+        origin_current = double(O_sym);
     end
     
-end
-
-%Function that returns attractive force on each joint
-function F_att = Attractive_Forces(origin_start, origin_next, d, zeta)
-    %Origin_start, Origin_next: 3x1
-    %zeta: scalar
-    if norm(origin_start - origin_next) <= d
-        F_att = -zeta*(origin_start - origin_next); %Parabolic
-    else
-        F_att = -d*zeta*((origin_start - origin_next)/norm(origin_start - origin_next)); %Conic
+    % Substitute goal joint values
+    try
+        origin_goal = double(subs(O_sym, [d1, theta2, theta3], q_target));
+    catch
+        origin_goal = double(O_sym);
     end
-        
 end
 
+function F_att = Attractive_Forces(origin_current, origin_goal, d, zeta)
+    % Compute attractive force
+    diff = origin_current - origin_goal;
+    dist = norm(diff);
+    
+    if dist <= d
+        % Parabolic well
+        F_att = -zeta * diff;
+    else
+        % Conic well
+        F_att = -d * zeta * (diff / dist);
+    end
+end
 
-function F_rep = Repulsive_Force(pos, obs, rho, nu, origin_start)
-    % pos: 1x3 current EE position
-    % obs: Nx3 obstacle positions
-    % rho: influence distance
-    % nu: scalar
+function F_rep = Repulsive_Force(origin_joint, obs, rho, nu)
+    % Compute repulsive force from all obstacles
     F_rep = zeros(3,1);
-%If the position of the EE if within the bounds of an obstacle 
-    if norm(pos(1,:) - obs(1,:)) <= rho
-        %CONFIRM THIS FUNCTION. I AM NOT SURE IF I DID THIS RIGHT 
-        F_rep(:,joint) = nu*((1/norm(origin_start-obs(1,:))) - (1/rho))*(1/norm(origin_start-obs(1,:))^2)*((origin_start - obs(1,:))/norm(origin_start - obs(1,:))); 
-    else if norm(pos(1,:) - obs(2,:)) <= rho
-        F_rep(:,joint) = F_rep(:,joint) + nu*((1/norm(origin_start-obs(1,:))) - (1/rho))*(1/norm(origin_start-obs(1,:))^2)*((origin_start - obs(1,:))/norm(origin_start - obs(1,:)));
-    else
-        F_rep(:,joint) = 0; 
-    end
     
-end
-
-
-function tau = torques(F_att, F_rep,J)
+    for i = 1:size(obs, 1)
+        diff = origin_joint - obs(i,:)';
+        dist = norm(diff);
         
-    %J = bot.Jacobian(q);
-    
-    
-    %Figure out how to set jacobians in this equation
-    %tau_att = transpose(J)*transpose(F_att);
-    %tau_rep = transpose(J)*transpose(F_rep);
-    
-    %tau = tau_att + tau_rep;
-
-    % F_att_joint, F_rep_joint: 3x1
-    % J: 3x3 velocity Jacobian for this joint
-    tau = J.' * (F_att + F_rep);
-
-
+        if dist <= rho && dist > 1e-3  % Avoid division by zero
+            % Repulsive gradient
+            magnitude = nu * (1/dist - 1/rho) * (1/dist^2);
+            F_rep = F_rep + magnitude * (diff / dist);
+        end
+    end
 end
 
-function [J, O, z] = Jv(bot)
+function tau = torques(F_att, F_rep, J)
+    % Compute torque contribution
+    % F_att, F_rep: 3x1 vectors
+    % J: 3x3 Jacobian
+    tau = J' * (F_att + F_rep);
+end
+
+function [J_all, O, z] = Jv(bot)
+    % Compute velocity Jacobians for each joint
+    syms d1 theta2 theta3 l1 l2 l3
     
+    % Initialize
     z = sym(zeros(3, bot.numJoints + 1));
     O = sym(zeros(3, bot.numJoints + 1));
-
-    %Setting up variables for calculating jacobians
-    O(:,2) = simplify(bot.A_Mats(1:3,4,1))
-    O(:,3) = simplify(bot.A_Mats(1:3,4,2))
-    O(:,4) = simplify(bot.A_Mats(1:3,4,3))
-    z(:,1) = [0;0;1]
-    z(:,2) = simplify(bot.A_Mats(1:3,3,1))
-    z(:,3) = simplify(bot.A_Mats(1:3,3,2))
-    z(:,4) = simplify(bot.A_Mats(1:3,3,3))
+    J_all = sym(zeros(3, bot.numJoints, bot.numJoints));
     
+    % Base frame
+    z(:,1) = [0;0;1];
+    O(:,1) = [0;0;0];
+    
+    % Build cumulative transformation matrices
+    T = sym(eye(4));
+    for i = 1:bot.numJoints
+        T = T * bot.A_Mats(:,:,i);
+        O(:,i+1) = simplify(T(1:3,4));
+        z(:,i+1) = simplify(T(1:3,3));
+    end
+    
+    % Substitute link lengths
+    O = subs(O, [l1, l2, l3], [bot.links(1), bot.links(2), bot.links(3)]);
+    z = subs(z, [l1, l2, l3], [bot.links(1), bot.links(2), bot.links(3)]);
+    
+    % Build Jacobians for each joint origin
+    for joint_idx = 1:bot.numJoints
+        for col = 1:bot.numJoints
+            if col <= joint_idx
+                % This joint affects the current joint's position
+                if bot.config(col) == "P"
+                    % Prismatic joint
+                    J_all(:,col,joint_idx) = z(:,col);
+                else
+                    % Revolute joint
+                    J_all(:,col,joint_idx) = cross(z(:,col), O(:,joint_idx+1) - O(:,col));
+                end
+            else
+                % Later joints don't affect this joint's position
+                J_all(:,col,joint_idx) = [0;0;0];
+            end
+        end
+        J_all(:,:,joint_idx) = simplify(J_all(:,:,joint_idx));
+    end
+end
 
-    J(:,:,1) = [cross(z(:,1),O(:,2)), [0;0;0], [0;0;0]];
-    J(:,:,2) = [cross(z(:,1),O(:,3)), cross(z(:,2),(O(:,3)-O(:,2))), [0;0;0]];
-    J(:,:,3) = [cross(z(:,1),O(:,4)), cross(z(:,2),(O(:,4)-O(:,2))), cross(z(:,3),(O(:,4)-O(:,3)))];
-
+function J_numeric = getJacobian(J_all, q_current, joint_idx)
+    % Extract and evaluate Jacobian for a specific joint
+    syms d1 theta2 theta3
+    
+    J_sym = J_all(:,:,joint_idx);
+    J_numeric = double(subs(J_sym, [d1, theta2, theta3], q_current));
 end
 
 function plotPath(path_points, pos_start, pos_goal, obs)
-    % --- Coordinate swap for visualization (Z <-> X)
+    % Coordinate swap for visualization (Z <-> X)
     path_points = path_points(:, [3 2 1]);
-    pos_start   = pos_start([3 2 1]);
-    pos_goal    = pos_goal([3 2 1]);
-    obs         = obs(:, [3 2 1]);
+    pos_start = pos_start([3 2 1]);
+    pos_goal = pos_goal([3 2 1]);
+    obs = obs(:, [3 2 1]);
 
-    % --- Figure setup
+    % Figure setup
     figure('Name','Manipulator Path (3D)','NumberTitle','off');
     hold on;
     grid on;
     axis equal;
     view(45, 30);
-    xlabel('X (mm)');
+    xlabel('Z (mm)');
     ylabel('Y (mm)');
-    zlabel('Z (mm)');
-    title('Manipulator End-Effector Path in 3D');
+    zlabel('X (mm)');
+    title('Manipulator End-Effector Path with Obstacle Avoidance');
 
-    % --- Plot static elements
-    if ~isempty(obs)
-        scatter3(obs(:,1), obs(:,2), obs(:,3), 120, 'k', 'filled', 'DisplayName','Obstacles');
+    % Plot obstacles with influence spheres
+    for i = 1:size(obs,1)
+        [x_s, y_s, z_s] = sphere(20);
+        surf(obs(i,1) + 250*x_s, obs(i,2) + 250*y_s, obs(i,3) + 250*z_s, ...
+             'FaceColor', 'r', 'FaceAlpha', 0.1, 'EdgeColor', 'none', 'HandleVisibility', 'off');
     end
-    scatter3(pos_start(1), pos_start(2), pos_start(3), 100, 'g', 'filled', 'DisplayName','Start');
-    scatter3(pos_goal(1), pos_goal(2), pos_goal(3), 100, 'r', 'filled', 'DisplayName','Goal');
+    
+    % Plot static elements
+    scatter3(obs(:,1), obs(:,2), obs(:,3), 120, 'k', 'filled', 'DisplayName','Obstacles');
+    scatter3(pos_start(1), pos_start(2), pos_start(3), 150, 'g', '^', 'filled', 'LineWidth', 2, 'DisplayName','Start');
+    scatter3(pos_goal(1), pos_goal(2), pos_goal(3), 150, 'r', 'pentagram', 'filled', 'LineWidth', 2, 'DisplayName','Goal');
 
-    % --- Path line
-    plot3(path_points(:,1), path_points(:,2), path_points(:,3), ...
-          'b-', 'LineWidth', 2, 'DisplayName','EE Path');
+    % Path line
+    if size(path_points,1) > 1
+        plot3(path_points(:,1), path_points(:,2), path_points(:,3), ...
+              'b-', 'LineWidth', 3, 'DisplayName','EE Path');
+        
+        % Mark final position
+        scatter3(path_points(end,1), path_points(end,2), path_points(end,3), ...
+                 120, 'c', 'o', 'filled', 'DisplayName','Final Position');
+    end
 
-    % --- Animate End-Effector
+    % Animate End-Effector
     if size(path_points,1) > 1
         hEE = scatter3(path_points(1,1), path_points(1,2), path_points(1,3), ...
-                       80, 'b', 'filled', 'DisplayName','End-Effector');
-        for i = 2:size(path_points,1)
+                       100, 'b', 'filled', 'DisplayName','Current Position');
+        for i = 2:10:size(path_points,1)  % Every 10th point
             if ~isvalid(hEE), break; end
             set(hEE, 'XData', path_points(i,1), ...
                      'YData', path_points(i,2), ...
                      'ZData', path_points(i,3));
             drawnow limitrate;
-            pause(0.02);
+            pause(0.01);
         end
+        % Final position
+        set(hEE, 'XData', path_points(end,1), ...
+                 'YData', path_points(end,2), ...
+                 'ZData', path_points(end,3));
     end
 
     legend('Location','bestoutside');
